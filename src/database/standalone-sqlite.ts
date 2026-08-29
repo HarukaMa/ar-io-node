@@ -71,6 +71,7 @@ const MAX_WORKER_COUNT = 12;
 const MAX_WORKER_ERRORS = 100;
 
 const STABLE_FLUSH_INTERVAL = 5;
+const BUNDLES_WAL_AUTOCHECKPOINT_PAGES = 50_000;
 // Grace period before a never-mined optimistic (NULL-height) transaction is
 // reclaimed by the stale-new-data GC. Configurable so operators running
 // optimistic L1 tx indexing (corner C) can tune the leash to observed
@@ -511,6 +512,9 @@ export class StandaloneSqliteDatabaseWorker {
       db.pragma('journal_mode = WAL');
       db.pragma('page_size = 4096'); // may depend on OS and FS
     }
+    this.dbs.bundles.pragma(
+      `wal_autocheckpoint = ${BUNDLES_WAL_AUTOCHECKPOINT_PAGES}`,
+    );
 
     this.dbs.core.exec(`ATTACH DATABASE '${bundlesDbPath}' AS bundles`);
     this.dbs.data.exec(`ATTACH DATABASE '${bundlesDbPath}' AS bundles`);
@@ -3562,10 +3566,11 @@ export class StandaloneSqliteDatabase
           worker.postMessage(job.message);
         }
       }
+      self.workers[pool][role].push({ takeWork });
+
 
       worker
         .on('online', () => {
-          self.workers[pool][role].push({ takeWork });
           takeWork();
         })
         .on('message', async (result) => {
