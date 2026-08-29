@@ -1226,30 +1226,42 @@ export class ArweaveCompositeClient
     });
 
     try {
-      // Try bucket-specific peers first, then general peers as fallback
+      // Try healthy operator-selected peers first, including any that also
+      // advertise the target bucket, then fall back to remaining bucket and
+      // general peers.
       const bucketPeers = this.peerManager.selectBucketPeersForOffset(
         absoluteOffset,
-        Math.max(peerSelectionCount, retryCount), // Get more bucket peers upfront
+        Math.max(peerSelectionCount, retryCount),
       );
-
-      // Get general peers as secondary fallback (excluding bucket peers to avoid duplicates)
       const allGeneralPeers = this.peerManager.selectPeers(
         'getChunk',
         Math.max(peerSelectionCount, retryCount),
       );
-
-      // Filter out bucket peers from general peers to avoid duplicates
       const bucketPeerSet = new Set(bucketPeers);
-      const generalPeers = allGeneralPeers.filter(
-        (peer) => !bucketPeerSet.has(peer),
+      const preferredPeers = Array.from(
+        new Set(
+          [...bucketPeers, ...allGeneralPeers].filter((peer) =>
+            this.peerManager.isPreferredChunkGetPeer(peer),
+          ),
+        ),
       );
-
-      // Combine: bucket peers first, then general peers
-      const orderedPeers = [...bucketPeers, ...generalPeers];
+      const preferredPeerSet = new Set(preferredPeers);
+      const remainingBucketPeers = Array.from(
+        new Set(bucketPeers.filter((peer) => !preferredPeerSet.has(peer))),
+      );
+      const generalPeers = allGeneralPeers.filter(
+        (peer) => !bucketPeerSet.has(peer) && !preferredPeerSet.has(peer),
+      );
+      const orderedPeers = [
+        ...preferredPeers,
+        ...remainingBucketPeers,
+        ...generalPeers,
+      ];
 
       this.log.debug('Peer selection for chunk request', {
         absoluteOffset,
         bucketPeers: bucketPeers.length,
+        preferredPeers: preferredPeers.length,
         generalPeers: generalPeers.length,
         totalSelectedPeers: orderedPeers.length,
         maxAttempts: Math.min(orderedPeers.length, retryCount),
@@ -1271,13 +1283,14 @@ export class ArweaveCompositeClient
         'chunk.general_peers': generalPeers.length,
       });
 
-      // Iterate through peers sequentially (bucket peers first, then general)
+      // Try preferred peers, then remaining bucket peers, then general peers.
       const maxAttempts = Math.min(orderedPeers.length, retryCount);
       for (let peerIndex = 0; peerIndex < maxAttempts; peerIndex++) {
-        // Check if we're transitioning from bucket peers to general peers
-        const isBucketPeer = peerIndex < bucketPeers.length;
+        const isBucketPeer = bucketPeerSet.has(orderedPeers[peerIndex]);
         const isTransition =
-          peerIndex === bucketPeers.length && bucketPeers.length > 0;
+          bucketPeers.length > 0 &&
+          generalPeers.length > 0 &&
+          peerIndex === preferredPeers.length + remainingBucketPeers.length;
 
         if (isTransition) {
           span.addEvent('Transitioning to general peers', {

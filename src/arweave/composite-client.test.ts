@@ -71,6 +71,8 @@ describe('ArweaveCompositeClient', () => {
         }
         return [];
       }),
+      selectBucketPeersForOffset: mock.fn(() => []),
+      isPreferredChunkGetPeer: mock.fn(() => false),
       isPreferredChunkPostPeer: mock.fn(() => false),
       reportSuccess: mock.fn(),
       reportFailure: mock.fn(),
@@ -392,6 +394,64 @@ describe('ArweaveCompositeClient', () => {
       const selectedPeers = client.peerManager.selectPeers('getChunk', 5);
 
       assert.equal(selectedPeers.length, 0);
+    });
+
+    it('tries a preferred bucket peer first', async () => {
+      let preferredHits = 0;
+      let bucketHits = 0;
+      const preferredServer = http.createServer((_req, res) => {
+        preferredHits++;
+        res.writeHead(500).end();
+      });
+      const bucketServer = http.createServer((_req, res) => {
+        bucketHits++;
+        res.writeHead(500).end();
+      });
+      await Promise.all(
+        [preferredServer, bucketServer].map(
+          (server) =>
+            new Promise<void>((resolve) =>
+              server.listen(0, '127.0.0.1', () => resolve()),
+            ),
+        ),
+      );
+      const preferredUrl = `http://127.0.0.1:${
+        (preferredServer.address() as AddressInfo).port
+      }`;
+      const bucketUrl = `http://127.0.0.1:${
+        (bucketServer.address() as AddressInfo).port
+      }`;
+      mockPeerManager.selectBucketPeersForOffset = mock.fn(() => [
+        bucketUrl,
+        preferredUrl,
+      ]);
+      mockPeerManager.selectPeers = mock.fn(() => [preferredUrl, bucketUrl]);
+      mockPeerManager.isPreferredChunkGetPeer = mock.fn(
+        (peer: string) => peer === preferredUrl,
+      );
+
+      try {
+        const client = createTestClient();
+        await assert.rejects(
+          client.peerGetChunk({
+            txSize: 1,
+            absoluteOffset: 1,
+            dataRoot: '',
+            relativeOffset: 0,
+            peerSelectionCount: 2,
+            retryCount: 1,
+          }),
+        );
+        assert.equal(preferredHits, 1);
+        assert.equal(bucketHits, 0);
+      } finally {
+        await Promise.all(
+          [preferredServer, bucketServer].map(
+            (server) =>
+              new Promise<void>((resolve) => server.close(() => resolve())),
+          ),
+        );
+      }
     });
 
     it('should not use trusted node for chunk retrieval', async () => {
