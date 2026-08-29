@@ -15,7 +15,7 @@ import { DataItemIndexWriter, NormalizedDataItem } from '../types.js';
 
 const DEFAULT_WORKER_COUNT = 1;
 const DEFAULT_MAX_QUEUE_SIZE = 500_000;
-const BATCH_SIZE = 500;
+const BATCH_SIZE = 100;
 const QUEUE_NAME = 'dataItemIndexer';
 
 interface DataItemJob {
