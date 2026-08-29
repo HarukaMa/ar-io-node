@@ -92,6 +92,7 @@ describe('TxMetadataResolver', () => {
     };
     dataItemIndexWriter = {
       saveDataItem: mock.fn(() => Promise.resolve()),
+      saveDataItems: mock.fn(() => Promise.resolve()),
     };
   });
 

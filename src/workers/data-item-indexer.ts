@@ -15,6 +15,7 @@ import { DataItemIndexWriter, NormalizedDataItem } from '../types.js';
 
 const DEFAULT_WORKER_COUNT = 1;
 const DEFAULT_MAX_QUEUE_SIZE = 500_000;
+const BATCH_SIZE = 100;
 const QUEUE_NAME = 'dataItemIndexer';
 
 interface DataItemJob {
@@ -37,7 +38,9 @@ export class DataItemIndexer {
   private maxQueueSize: number;
 
   // Data indexing queue
-  private queue: queueAsPromised<DataItemJob, void>;
+  private queue: queueAsPromised<DataItemJob[], void>;
+  private pendingBatch: DataItemJob[] = [];
+  private flushImmediate?: NodeJS.Immediate;
 
   // Tracked queue depth. Mirrors `this.queue.length()` but is O(1) to read.
   // fastq's `length()` walks the linked list of pending tasks, which is
@@ -66,7 +69,7 @@ export class DataItemIndexer {
     this.eventEmitter = eventEmitter;
     this.maxQueueSize = maxQueueSize;
 
-    this.queue = fastq.promise(this.indexDataItem.bind(this), workerCount);
+    this.queue = fastq.promise(this.indexDataItems.bind(this), workerCount);
   }
 
   async queueDataItem(
@@ -93,13 +96,21 @@ export class DataItemIndexer {
 
     if (isPrioritized) {
       this.log.debug('Queueing prioritized data item for indexing...', meta);
-      this.queue.unshift(job);
+      this.queue.unshift([job]);
       this.depth++;
       this.log.debug('Prioritized data item queued for indexing.', meta);
     } else if (this.maxQueueSize === 0 || this.depth < this.maxQueueSize) {
       this.log.debug('Queueing data item for indexing...', meta);
-      this.queue.push(job);
+      this.pendingBatch.push(job);
       this.depth++;
+      if (this.pendingBatch.length >= BATCH_SIZE) {
+        this.flushPendingBatch();
+      } else if (this.flushImmediate === undefined) {
+        this.flushImmediate = setImmediate(() => {
+          this.flushImmediate = undefined;
+          this.flushPendingBatch();
+        });
+      }
       this.log.debug('Data item queued for indexing.', meta);
     } else {
       metrics.dataItemsDroppedCounter.inc({ queue_name: QUEUE_NAME });
@@ -110,42 +121,41 @@ export class DataItemIndexer {
       });
     }
   }
+  private flushPendingBatch(): void {
+    if (this.pendingBatch.length === 0) return;
+    const batch = this.pendingBatch;
+    this.pendingBatch = [];
+    this.queue.push(batch);
+  }
 
   queueDepth(): number {
     return this.depth;
   }
 
-  async indexDataItem(job: DataItemJob): Promise<void> {
-    const { item, isOptimistic } = job;
-    const log = this.log.child({
-      method: 'indexDataItem',
-      id: item.id,
-      parentId: item.parent_id,
-      rootTxId: item.root_tx_id,
-      isOptimistic,
-    });
-
+  async indexDataItems(jobs: DataItemJob[]): Promise<void> {
     try {
-      log.debug('Indexing data item...');
-      await this.indexWriter.saveDataItem(item, isOptimistic);
-      metrics.dataItemsIndexedCounter.inc({
-        parent_type:
-          item.parent_id === item.root_tx_id ? 'transaction' : 'data_item',
-      });
+      await this.indexWriter.saveDataItems(jobs);
+      for (const { item } of jobs) {
+        metrics.dataItemsIndexedCounter.inc({
+          parent_type:
+            item.parent_id === item.root_tx_id ? 'transaction' : 'data_item',
+        });
+        this.eventEmitter.emit(events.ANS104_DATA_ITEM_INDEXED, item);
+      }
       metrics.dataItemLastIndexedTimestampSeconds.set(
         Math.floor(Date.now() / 1000),
       );
-      this.eventEmitter.emit(events.ANS104_DATA_ITEM_INDEXED, item);
-      log.debug('Data item indexed.');
     } catch (error) {
-      log.error('Failed to index data item data:', error);
+      this.log.error('Failed to index data item batch:', error);
     } finally {
-      this.depth--;
+      this.depth -= jobs.length;
     }
   }
 
   async stop(): Promise<void> {
     const log = this.log.child({ method: 'stop' });
+    clearImmediate(this.flushImmediate);
+    this.pendingBatch = [];
     this.queue.kill();
     log.debug('Stopped successfully.');
   }

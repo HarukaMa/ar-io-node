@@ -7,6 +7,7 @@
 import { strict as assert } from 'node:assert';
 import EventEmitter from 'node:events';
 import { afterEach, beforeEach, describe, it } from 'node:test';
+import { setImmediate as nextImmediate } from 'node:timers/promises';
 
 import * as metrics from '../metrics.js';
 import { DataItemIndexWriter, NormalizedDataItem } from '../types.js';
@@ -23,14 +24,25 @@ const makeItem = (id: string): NormalizedDataItem =>
 class BlockingIndexWriter implements DataItemIndexWriter {
   release: () => void = () => {};
   saveCalls = 0;
+  batchSizes: number[] = [];
   private gate: Promise<void>;
   constructor() {
+    // Node 20 does not provide Promise.withResolvers().
     this.gate = new Promise((resolve) => {
       this.release = resolve;
     });
   }
-  async saveDataItem(): Promise<void> {
-    this.saveCalls++;
+  async saveDataItem(
+    item: NormalizedDataItem,
+    isOptimistic = false,
+  ): Promise<void> {
+    await this.saveDataItems([{ item, isOptimistic }]);
+  }
+  async saveDataItems(
+    items: { item: NormalizedDataItem; isOptimistic: boolean }[],
+  ): Promise<void> {
+    this.saveCalls += items.length;
+    this.batchSizes.push(items.length);
     await this.gate;
   }
 }
@@ -96,6 +108,27 @@ describe('DataItemIndexer', () => {
     assert.equal(await droppedValue(), before);
     // All 50 counted: 1 in-flight + 49 queued; depth tracks both.
     assert.equal(indexer.queueDepth(), 50);
+  });
+
+  it('batches non-prioritized items queued in the same turn', async () => {
+    indexer = new DataItemIndexer({
+      log,
+      eventEmitter: new EventEmitter(),
+      indexWriter: writer,
+      workerCount: 1,
+      maxQueueSize: 0,
+    });
+
+    await indexer.queueDataItem(makeItem('a'));
+    await indexer.queueDataItem(makeItem('b'));
+    await nextImmediate();
+
+    assert.deepEqual(writer.batchSizes, [2]);
+    assert.equal(indexer.queueDepth(), 2);
+
+    writer.release();
+    await nextImmediate();
+    assert.equal(indexer.queueDepth(), 0);
   });
 
   it('prioritized items bypass the cap', async () => {

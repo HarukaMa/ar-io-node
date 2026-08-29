@@ -2658,8 +2658,10 @@ describe('StandaloneSqliteDatabase', () => {
         dataSize: 10,
       });
 
-      await db.saveDataItem(normalizedDataItem);
-      await db.saveDataItem(anotherDataItem);
+      await db.saveDataItems([
+        { item: normalizedDataItem, isOptimistic: false },
+        { item: anotherDataItem, isOptimistic: false },
+      ]);
 
       const sql = `
         SELECT * FROM contiguous_data_ids;

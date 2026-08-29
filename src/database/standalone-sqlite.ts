@@ -475,6 +475,7 @@ export class StandaloneSqliteDatabaseWorker {
   insertTxFn: Sqlite.Transaction;
   insertDataItemFn: Sqlite.Transaction;
   insertOptimisticDataItemFn: Sqlite.Transaction;
+  private saveDataItemsFn: Sqlite.Transaction;
   insertBlockAndTxsFn: Sqlite.Transaction;
   saveCoreStableDataFn: Sqlite.Transaction;
   saveBundlesStableDataFn: Sqlite.Transaction;
@@ -687,6 +688,16 @@ export class StandaloneSqliteDatabaseWorker {
           ...rows.newDataItem,
           height,
         });
+      },
+    );
+
+    this.saveDataItemsFn = this.dbs.bundles.transaction(
+      (
+        items: { item: NormalizedDataItem; isOptimistic: boolean }[],
+      ): void => {
+        for (const { item, isOptimistic } of items) {
+          this.saveDataItem(item, isOptimistic);
+        }
       },
     );
 
@@ -1335,6 +1346,12 @@ export class StandaloneSqliteDatabaseWorker {
       this.insertDataItemFn(item, maybeTxHeight);
     }
   }
+  saveDataItems(
+    items: { item: NormalizedDataItem; isOptimistic: boolean }[],
+  ): void {
+    this.saveDataItemsFn(items);
+  }
+
 
   saveBundleRetries(rootTransactionId: string) {
     const rootTxId = fromB64Url(rootTransactionId);
@@ -3965,12 +3982,15 @@ export class StandaloneSqliteDatabase
     item: NormalizedDataItem,
     isOptimistic = false,
   ): Promise<void> {
-    if (this.shouldFlushDataItems()) {
-      await this.flushStableDataItems();
-    }
+    return this.saveDataItems([{ item, isOptimistic }]);
+  }
 
-    this.newDataItemsCount++;
-    return this.queueWrite('bundles', 'saveDataItem', [item, isOptimistic]);
+  async saveDataItems(
+    items: { item: NormalizedDataItem; isOptimistic: boolean }[],
+  ): Promise<void> {
+    if (this.shouldFlushDataItems()) await this.flushStableDataItems();
+    this.newDataItemsCount += items.length;
+    return this.queueWrite('bundles', 'saveDataItems', [items]);
   }
 
   saveBundleRetries(rootTransactionId: string): Promise<void> {
@@ -4631,10 +4651,14 @@ if (!isMainThread) {
         case 'countConfirmedDataRoots':
           parentPort?.postMessage(worker.countConfirmedDataRoots());
           break;
-        case 'saveDataItem':
-          worker.saveDataItem(args[0], args[1]);
-          parentPort?.postMessage(null);
-          break;
+    case 'saveDataItem':
+      worker.saveDataItem(args[0], args[1]);
+      parentPort?.postMessage(null);
+      break;
+    case 'saveDataItems':
+      worker.saveDataItems(args[0]);
+      parentPort?.postMessage(null);
+      break;
         case 'saveBundleRetries':
           worker.saveBundleRetries(args[0]);
           parentPort?.postMessage(null);

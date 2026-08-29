@@ -445,6 +445,9 @@ export interface DataItemIndexWriter {
    * resolver. The implementation atomically upserts the full root atom.
    */
   saveDataItem(item: NormalizedDataItem, isOptimistic?: boolean): Promise<void>;
+  saveDataItems(
+    items: { item: NormalizedDataItem; isOptimistic: boolean }[],
+  ): Promise<void>;
 }
 
 export interface NestedDataIndexWriter {
