@@ -2601,6 +2601,32 @@ describe('StandaloneSqliteDatabase', () => {
     });
   });
 
+  describe('saveDataItems', () => {
+    it('rolls back the whole batch when an item fails', () => {
+      const validItem = {
+        ...normalizedDataItem,
+        id: toB64Url(crypto.randomBytes(32)),
+      };
+      const invalidItem = {
+        ...normalizedDataItem,
+        id: toB64Url(crypto.randomBytes(32)),
+        owner_address: undefined as unknown as string,
+      };
+
+      assert.throws(() =>
+        dbWorker.saveDataItems([
+          { item: validItem, isOptimistic: false },
+          { item: invalidItem, isOptimistic: false },
+        ]),
+      );
+
+      const row = bundlesDb
+        .prepare('SELECT id FROM new_data_items WHERE id = ?')
+        .get(fromB64Url(validItem.id));
+      assert.equal(row, undefined);
+    });
+  });
+
   // skipping for now as it works when running the test individually
   describe.skip('saveVerificationStatus', () => {
     const dataItemRootTxId = '0000000000000000000000000000000000000000000';
