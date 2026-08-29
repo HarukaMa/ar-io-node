@@ -247,7 +247,7 @@ describe('StandaloneSqliteDatabase', () => {
   });
 
   after(async () => {
-    db.stop();
+    await db.stop();
   });
 
   describe('offsets', () => {
@@ -2624,6 +2624,57 @@ describe('StandaloneSqliteDatabase', () => {
         .prepare('SELECT id FROM new_data_items WHERE id = ?')
         .get(fromB64Url(validItem.id));
       assert.equal(row, undefined);
+    });
+  });
+
+  describe('flushStableDataItems', () => {
+    it('rolls back stable inserts when cleanup fails', () => {
+      const itemId = toB64Url(crypto.randomBytes(32));
+      const rootTxId = toB64Url(crypto.randomBytes(32));
+      const height = 100;
+      const item = {
+        ...normalizedDataItem,
+        id: itemId,
+        parent_id: rootTxId,
+        root_tx_id: rootTxId,
+      };
+
+      dbWorker.saveDataItem(item);
+      bundlesDb
+        .prepare('UPDATE new_data_items SET height = @height WHERE id = @id')
+        .run({ height, id: fromB64Url(itemId) });
+      coreDb
+        .prepare(
+          `INSERT INTO stable_block_transactions (
+             block_indep_hash, transaction_id, block_transaction_index
+           ) VALUES (@hash, @transaction_id, 0)`,
+        )
+        .run({
+          hash: crypto.randomBytes(32),
+          transaction_id: fromB64Url(rootTxId),
+        });
+
+      bundlesDb.exec(`
+        CREATE TRIGGER fail_stable_flush_cleanup
+        BEFORE DELETE ON new_data_items
+        BEGIN
+          SELECT RAISE(ABORT, 'forced cleanup failure');
+        END
+      `);
+      try {
+        assert.throws(() => dbWorker.flushStableDataItems(height + 1, 0));
+      } finally {
+        bundlesDb.exec('DROP TRIGGER fail_stable_flush_cleanup');
+      }
+
+      const stableRow = bundlesDb
+        .prepare('SELECT id FROM stable_data_items WHERE id = ?')
+        .get(fromB64Url(itemId));
+      const newRow = bundlesDb
+        .prepare('SELECT id FROM new_data_items WHERE id = ?')
+        .get(fromB64Url(itemId));
+      assert.equal(stableRow, undefined);
+      assert.notEqual(newRow, undefined);
     });
   });
 

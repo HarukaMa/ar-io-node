@@ -476,9 +476,8 @@ export class StandaloneSqliteDatabaseWorker {
   private saveDataItemsFn: Sqlite.Transaction;
   insertBlockAndTxsFn: Sqlite.Transaction;
   saveCoreStableDataFn: Sqlite.Transaction;
-  saveBundlesStableDataFn: Sqlite.Transaction;
+  flushBundlesStableDataFn: Sqlite.Transaction;
   deleteCoreStaleNewDataFn: Sqlite.Transaction;
-  deleteBundlesStaleNewDataFn: Sqlite.Transaction;
   deleteStableDataItemsWithHeightAndIndexedAtFn: Sqlite.Transaction;
 
   constructor({
@@ -862,14 +861,24 @@ export class StandaloneSqliteDatabaseWorker {
       },
     );
 
-    this.saveBundlesStableDataFn = this.dbs.bundles.transaction(
-      (endHeight: number) => {
+    this.flushBundlesStableDataFn = this.dbs.bundles.transaction(
+      (endHeight: number, indexedAtThreshold: number) => {
         this.stmts.bundles.insertOrIgnoreStableDataItems.run({
           end_height: endHeight,
         });
 
         this.stmts.bundles.insertOrIgnoreStableDataItemTags.run({
           end_height: endHeight,
+        });
+
+        this.stmts.bundles.deleteStaleNewDataItems.run({
+          height_threshold: endHeight,
+          indexed_at_threshold: indexedAtThreshold,
+        });
+
+        this.stmts.bundles.deleteStaleNewDataItemTags.run({
+          height_threshold: endHeight,
+          indexed_at_threshold: indexedAtThreshold,
         });
       },
     );
@@ -901,19 +910,6 @@ export class StandaloneSqliteDatabaseWorker {
       },
     );
 
-    this.deleteBundlesStaleNewDataFn = this.dbs.bundles.transaction(
-      (heightThreshold: number, indexedAtThreshold: number) => {
-        this.stmts.bundles.deleteStaleNewDataItems.run({
-          height_threshold: heightThreshold,
-          indexed_at_threshold: indexedAtThreshold,
-        });
-
-        this.stmts.bundles.deleteStaleNewDataItemTags.run({
-          height_threshold: heightThreshold,
-          indexed_at_threshold: indexedAtThreshold,
-        });
-      },
-    );
 
     this.deleteStableDataItemsWithHeightAndIndexedAtFn =
       this.dbs.bundles.transaction(
@@ -1450,9 +1446,7 @@ export class StandaloneSqliteDatabaseWorker {
   }
 
   flushStableDataItems(endHeight: number, maxStableBlockTimestamp: number) {
-    this.saveBundlesStableDataFn(endHeight);
-
-    this.deleteBundlesStaleNewDataFn(
+    this.flushBundlesStableDataFn(
       endHeight,
       maxStableBlockTimestamp - NEW_DATA_ITEM_CLEANUP_WAIT_SECS,
     );
