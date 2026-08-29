@@ -113,4 +113,22 @@ describe('VerifiedDataItemRootIndex', async () => {
 
     assert.equal(await index.getRootTx(dataItem.id), undefined);
   });
+
+  it('accepts a self-root from the trusted local index', async () => {
+    const trustedSelfCandidate: DataItemRootIndex = {
+      async getRootTx() {
+        return { rootTxId: dataItem.id };
+      },
+    };
+    const index = new VerifiedDataItemRootIndex({
+      log,
+      candidates: [trustedSelfCandidate],
+      offsetSource,
+      trustedSelfCandidate,
+    });
+
+    assert.deepEqual(await index.getRootTx(dataItem.id), {
+      rootTxId: dataItem.id,
+    });
+  });
 });

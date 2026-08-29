@@ -1053,6 +1053,7 @@ metrics.registerSemaphoreMetrics('cdb64_remote', cdb64HttpSemaphore);
 // Build root TX indexes based on configuration
 let cdb64RootTxIndex: Cdb64RootTxIndex | undefined;
 const rootTxIndexes: DataItemRootIndex[] = [];
+const localDbRootTxIndex = db as DataItemRootIndex;
 
 for (const sourceName of config.ROOT_TX_LOOKUP_ORDER) {
   switch (sourceName.toLowerCase()) {
@@ -1153,7 +1154,7 @@ for (const sourceName of config.ROOT_TX_LOOKUP_ORDER) {
       break;
 
     case 'db':
-      rootTxIndexes.push(db as DataItemRootIndex);
+      rootTxIndexes.push(localDbRootTxIndex);
       break;
 
     case 'cdb':
@@ -1188,23 +1189,20 @@ if (rootTxIndexes.length === 0) {
   );
 }
 
-// Verify every configured candidate against Arweave chunks before accepting it
-// when strict offset handling is enabled.
-const effectiveRootTxIndexes = config.REQUIRE_VERIFIED_DATA_ITEM_OFFSETS
-  ? [
-      new VerifiedDataItemRootIndex({
+// Strict mode validates candidates directly. Keeping the verifier outside the
+// composite avoids timing out valid chunk-backed signature checks.
+export const rootTxIndex: DataItemRootIndex =
+  config.REQUIRE_VERIFIED_DATA_ITEM_OFFSETS
+    ? new VerifiedDataItemRootIndex({
         log,
         candidates: rootTxIndexes,
         offsetSource: ans104ChunksOffsetSource,
-      }),
-    ]
-  : rootTxIndexes;
-
-// Create composite root TX index with circuit breakers
-export const rootTxIndex = new CompositeRootTxIndex({
-  log,
-  indexes: effectiveRootTxIndexes,
-});
+        trustedSelfCandidate: localDbRootTxIndex,
+      })
+    : new CompositeRootTxIndex({
+        log,
+        indexes: rootTxIndexes,
+      });
 
 // Resolver for data item metadata (used by /tx/:id and tag headers)
 // Tries gateways first (faster), then falls back to Arweave nodes via chunks

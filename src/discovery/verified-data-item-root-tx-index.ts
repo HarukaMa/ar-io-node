@@ -18,22 +18,26 @@ export class VerifiedDataItemRootIndex implements DataItemRootIndex {
   private readonly log: winston.Logger;
   private readonly candidates: DataItemRootIndex[];
   private readonly offsetSource: Ans104OffsetSource;
+  private readonly trustedSelfCandidate?: DataItemRootIndex;
   private readonly cache?: LRUCache<string, RootTxLookupResult>;
 
   constructor({
     log,
     candidates,
     offsetSource,
+    trustedSelfCandidate,
     cache,
   }: {
     log: winston.Logger;
     candidates: DataItemRootIndex[];
     offsetSource: Ans104OffsetSource;
+    trustedSelfCandidate?: DataItemRootIndex;
     cache?: LRUCache<string, RootTxLookupResult>;
   }) {
     this.log = log.child({ class: this.constructor.name });
     this.candidates = candidates;
     this.offsetSource = offsetSource;
+    this.trustedSelfCandidate = trustedSelfCandidate;
     this.cache = cache;
   }
 
@@ -47,7 +51,13 @@ export class VerifiedDataItemRootIndex implements DataItemRootIndex {
     for (const [candidateIndex, candidateSource] of this.candidates.entries()) {
       try {
         const candidate = await candidateSource.getRootTx(id);
-        if (candidate === undefined || candidate.rootTxId === id) continue;
+        if (candidate === undefined) continue;
+        if (candidate.rootTxId === id) {
+          if (candidateSource === this.trustedSelfCandidate) {
+            return candidate;
+          }
+          continue;
+        }
 
         const verified = await this.verifyCandidate(id, candidate);
         this.cache?.set(id, verified);
