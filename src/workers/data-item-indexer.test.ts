@@ -144,13 +144,13 @@ describe('DataItemIndexer', () => {
     await nextImmediate();
     assert.deepEqual(writer.batchSizes, [1]);
 
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 500; i++) {
       await indexer.queueDataItem(makeItem(`queued-${i}`));
     }
 
     writer.release();
     await nextImmediate();
-    assert.deepEqual(writer.batchSizes, [1, 100]);
+    assert.deepEqual(writer.batchSizes, [1, 500]);
     assert.equal(indexer.queueDepth(), 0);
   });
 
