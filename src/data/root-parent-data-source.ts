@@ -625,7 +625,7 @@ export class RootParentDataSource implements ContiguousDataSource {
         requestAttributes?.rootTransactionIdHint ??
         requestAttributes?.rootPathHint?.[0] ??
         null;
-      if (hintRootTxId != null) {
+      if (hintRootTxId != null && !this.requireVerifiedOffsets) {
         // Step 0a: Direct item offset hint — parse item header then fetch data
         const hintItemOffset = requestAttributes?.rootByteHint?.offset;
         const hintItemSize = requestAttributes?.rootByteHint?.size;

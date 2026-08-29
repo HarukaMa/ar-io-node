@@ -2794,7 +2794,7 @@ describe('RootParentDataSource', () => {
     });
   });
 
-  it('ignores unverified stored offsets in strict mode', async () => {
+  it('ignores unverified offsets and inbound hints in strict mode', async () => {
     const itemId = 'item';
     const staleRootId = 'stale-root';
     const verifiedRootId = 'verified-root';
@@ -2848,7 +2848,15 @@ describe('RootParentDataSource', () => {
       requireVerifiedOffsets: true,
     });
 
-    await strictRootParentDataSource.getData({ id: itemId });
+    await strictRootParentDataSource.getData({
+      id: itemId,
+      requestAttributes: {
+        hops: 0,
+        clientIps: [],
+        rootTransactionIdHint: 'attacker-root',
+        rootByteHint: { offset: 1, size: 2 },
+      },
+    });
 
     assert.strictEqual(rootLookupCount, 1);
     assert.strictEqual(fetchedId, verifiedRootId);
