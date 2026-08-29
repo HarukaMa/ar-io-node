@@ -92,6 +92,7 @@ import {
   NormalizedDataItem,
   PartialJsonTransaction,
   MatchableTxLike,
+  RootTxLookupResult,
 } from './types.js';
 import { Ans104DataIndexer } from './workers/ans104-data-indexer.js';
 import { Ans104Unbundler } from './workers/ans104-unbundler.js';
@@ -310,6 +311,10 @@ export const dataAttributesStore: ContiguousDataAttributesStore =
 // LRUCache v11 requires values to be objects, not primitives with undefined
 type CachedParentBundle = { bundleId?: string };
 const rootTxCache = new LRUCache<string, CachedParentBundle>({
+  max: config.ROOT_TX_CACHE_MAX_SIZE,
+  ttl: config.ROOT_TX_CACHE_TTL_MS,
+});
+const verifiedRootTxCache = new LRUCache<string, RootTxLookupResult>({
   max: config.ROOT_TX_CACHE_MAX_SIZE,
   ttl: config.ROOT_TX_CACHE_TTL_MS,
 });
@@ -1198,6 +1203,7 @@ export const rootTxIndex: DataItemRootIndex =
         candidates: rootTxIndexes,
         offsetSource: ans104ChunksOffsetSource,
         trustedSelfCandidate: localDbRootTxIndex,
+        cache: verifiedRootTxCache,
       })
     : new CompositeRootTxIndex({
         log,
