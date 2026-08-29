@@ -131,6 +131,29 @@ describe('DataItemIndexer', () => {
     assert.equal(indexer.queueDepth(), 0);
   });
 
+  it('fills batches while a write is active', async () => {
+    indexer = new DataItemIndexer({
+      log,
+      eventEmitter: new EventEmitter(),
+      indexWriter: writer,
+      workerCount: 1,
+      maxQueueSize: 0,
+    });
+
+    await indexer.queueDataItem(makeItem('first'));
+    await nextImmediate();
+    assert.deepEqual(writer.batchSizes, [1]);
+
+    for (let i = 0; i < 100; i++) {
+      await indexer.queueDataItem(makeItem(`queued-${i}`));
+    }
+
+    writer.release();
+    await nextImmediate();
+    assert.deepEqual(writer.batchSizes, [1, 100]);
+    assert.equal(indexer.queueDepth(), 0);
+  });
+
   it('prioritized items bypass the cap', async () => {
     indexer = new DataItemIndexer({
       log,

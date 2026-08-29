@@ -41,13 +41,14 @@ export class DataItemIndexer {
   private queue: queueAsPromised<DataItemJob[], void>;
   private pendingBatch: DataItemJob[] = [];
   private flushImmediate?: NodeJS.Immediate;
+  private batchDepth = 0;
 
   // Tracked queue depth. Mirrors `this.queue.length()` but is O(1) to read.
   // fastq's `length()` walks the linked list of pending tasks, which is
   // O(n) — at 100k+ depth that single call dominates main-thread CPU
   // (PE-9089: ~7-15ms per push, scaling with depth, was the actual
   // throughput-killer once the backpressure check was added in PE-9086).
-  // We increment when a job is queued and decrement in `indexDataItem`'s
+  // We increment when a job is queued and decrement in `indexDataItems`'s
   // `finally` so the counter stays accurate even on worker errors.
   private depth = 0;
 
@@ -96,20 +97,19 @@ export class DataItemIndexer {
 
     if (isPrioritized) {
       this.log.debug('Queueing prioritized data item for indexing...', meta);
+      this.batchDepth++;
       this.queue.unshift([job]);
       this.depth++;
       this.log.debug('Prioritized data item queued for indexing.', meta);
     } else if (this.maxQueueSize === 0 || this.depth < this.maxQueueSize) {
       this.log.debug('Queueing data item for indexing...', meta);
+      const wasIdle = this.batchDepth === 0 && this.pendingBatch.length === 0;
       this.pendingBatch.push(job);
       this.depth++;
       if (this.pendingBatch.length >= BATCH_SIZE) {
         this.flushPendingBatch();
-      } else if (this.flushImmediate === undefined) {
-        this.flushImmediate = setImmediate(() => {
-          this.flushImmediate = undefined;
-          this.flushPendingBatch();
-        });
+      } else if (wasIdle) {
+        this.schedulePendingBatch();
       }
       this.log.debug('Data item queued for indexing.', meta);
     } else {
@@ -121,10 +121,19 @@ export class DataItemIndexer {
       });
     }
   }
+  private schedulePendingBatch(): void {
+    if (this.flushImmediate !== undefined) return;
+    this.flushImmediate = setImmediate(() => {
+      this.flushImmediate = undefined;
+      this.flushPendingBatch();
+    });
+  }
+
   private flushPendingBatch(): void {
     if (this.pendingBatch.length === 0) return;
     const batch = this.pendingBatch;
     this.pendingBatch = [];
+    this.batchDepth++;
     this.queue.push(batch);
   }
 
@@ -149,6 +158,10 @@ export class DataItemIndexer {
       this.log.error('Failed to index data item batch:', error);
     } finally {
       this.depth -= jobs.length;
+      this.batchDepth--;
+      if (this.batchDepth === 0 && this.pendingBatch.length > 0) {
+        this.schedulePendingBatch();
+      }
     }
   }
 
