@@ -1213,7 +1213,9 @@ export const dataItemMetaResolver = new TxMetadataResolver({
   txStore,
   gqlQueryable,
   rootTxIndex,
-  ans104OffsetSources: [ans104GatewaysOffsetSource, ans104ChunksOffsetSource],
+  ans104OffsetSources: config.REQUIRE_VERIFIED_DATA_ITEM_OFFSETS
+    ? [ans104ChunksOffsetSource]
+    : [ans104GatewaysOffsetSource, ans104ChunksOffsetSource],
   dataItemIndexWriter: db,
   requireVerifiedDataItems: config.REQUIRE_VERIFIED_DATA_ITEM_OFFSETS,
   resolveConcurrency: config.TX_METADATA_RESOLVE_CONCURRENCY,
