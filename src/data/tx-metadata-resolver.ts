@@ -12,7 +12,6 @@ import { Ans104OffsetSource } from './ans104-offset-source.js';
 import { fromB64Url, sha256B64Url, utf8ToB64Url } from '../lib/encoding.js';
 import {
   DataItemIndexWriter,
-  DataAttributesSource,
   GqlQueryable,
   GqlTransaction,
   NormalizedBundleDataItem,
@@ -66,7 +65,6 @@ export class TxMetadataResolver {
   private rootTxIndex: RootTxIndex;
   private ans104OffsetSources: Ans104OffsetSource[];
   private dataItemIndexWriter?: DataItemIndexWriter;
-  private dataAttributesSource?: DataAttributesSource;
   private requireVerifiedDataItems: boolean;
   private cache: LRUCache<string, ResolvedTxMetadata>;
   private pendingPromises: Map<string, Promise<ResolvedTxMetadata | undefined>>;
@@ -79,7 +77,6 @@ export class TxMetadataResolver {
     rootTxIndex,
     ans104OffsetSources,
     dataItemIndexWriter,
-    dataAttributesSource,
     cacheSize = 10_000,
     resolveConcurrency = 1,
     requireVerifiedDataItems = false,
@@ -90,7 +87,6 @@ export class TxMetadataResolver {
     rootTxIndex: RootTxIndex;
     ans104OffsetSources: Ans104OffsetSource[];
     dataItemIndexWriter?: DataItemIndexWriter;
-    dataAttributesSource?: DataAttributesSource;
     cacheSize?: number;
     resolveConcurrency?: number;
     requireVerifiedDataItems?: boolean;
@@ -101,7 +97,6 @@ export class TxMetadataResolver {
     this.rootTxIndex = rootTxIndex;
     this.ans104OffsetSources = ans104OffsetSources;
     this.dataItemIndexWriter = dataItemIndexWriter;
-    this.dataAttributesSource = dataAttributesSource;
     this.requireVerifiedDataItems = requireVerifiedDataItems;
     this.cache = new LRUCache({ max: cacheSize });
     this.pendingPromises = new Map();
@@ -155,11 +150,7 @@ export class TxMetadataResolver {
       const gqlTx = await this.gqlQueryable.getGqlTransaction({ id });
       if (gqlTx !== null && gqlTx !== undefined) {
         if (gqlTx.isDataItem && this.requireVerifiedDataItems) {
-          const attributes =
-            await this.dataAttributesSource?.getDataAttributes(id);
-          if (attributes?.verified !== true) {
-            return undefined;
-          }
+          return undefined;
         }
         const resolved = this.fromGqlTransaction(gqlTx);
         this.cache.set(id, resolved);

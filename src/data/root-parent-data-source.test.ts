@@ -2794,7 +2794,7 @@ describe('RootParentDataSource', () => {
     });
   });
 
-  it('ignores unverified offsets and inbound hints in strict mode', async () => {
+  it('ignores stored offsets and inbound hints in strict mode', async () => {
     const itemId = 'item';
     const staleRootId = 'stale-root';
     const verifiedRootId = 'verified-root';
@@ -2809,7 +2809,7 @@ describe('RootParentDataSource', () => {
           rootDataItemOffset: 10,
           rootDataOffset: 20,
           size: 30,
-          verified: false,
+          verified: true,
         };
       },
       async setDataAttributes() {},

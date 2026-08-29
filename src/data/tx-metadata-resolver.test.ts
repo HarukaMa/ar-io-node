@@ -139,7 +139,7 @@ describe('TxMetadataResolver', () => {
       assert.equal(gqlQueryable.getGqlTransaction.mock.callCount(), 1);
     });
 
-    it('skips unverified local data items in strict mode', async () => {
+    it('skips local data items in strict mode', async () => {
       gqlQueryable.getGqlTransaction = mock.fn(() =>
         Promise.resolve({
           ...MOCK_GQL_TX,
@@ -147,17 +147,11 @@ describe('TxMetadataResolver', () => {
           parentId: ROOT_TX_ID,
         }),
       );
-      const dataAttributesSource = {
-        getDataAttributes: mock.fn(() =>
-          Promise.resolve({ verified: false, size: 100, offset: 0 }),
-        ),
-      };
       const resolver = new TxMetadataResolver({
         log,
         gqlQueryable,
         rootTxIndex,
         ans104OffsetSources: [offsetSource],
-        dataAttributesSource,
         requireVerifiedDataItems: true,
       });
 

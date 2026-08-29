@@ -411,8 +411,8 @@ export class RootParentDataSource implements ContiguousDataSource {
       return null;
     }
 
-    if (this.requireVerifiedOffsets && initialAttributes.verified !== true) {
-      log.debug('Ignoring unverified data item offsets');
+    if (this.requireVerifiedOffsets) {
+      log.debug('Ignoring stored data item offsets in strict mode');
       return null;
     }
 
@@ -477,11 +477,6 @@ export class RootParentDataSource implements ContiguousDataSource {
       const attributes = currentAttributes;
 
       if (attributes === null || attributes === undefined) {
-        if (this.requireVerifiedOffsets) {
-          log.debug('Verified parent chain is incomplete');
-          return null;
-        }
-
         // We hold no attributes for this ancestor. That may mean it is the L1
         // root, or only that we have not indexed it yet. Serve the request with
         // this root, but do not write the provisional result back.
@@ -499,13 +494,6 @@ export class RootParentDataSource implements ContiguousDataSource {
           fromPreComputed: false,
           provisional: true,
         };
-      }
-
-      if (this.requireVerifiedOffsets && attributes.verified !== true) {
-        log.debug('Verified parent chain contains unverified offsets', {
-          currentId,
-        });
-        return null;
       }
 
       // Remember the original item (the item we're looking for)
