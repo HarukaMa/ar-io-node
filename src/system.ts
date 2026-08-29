@@ -65,6 +65,7 @@ import {
   Cdb64RootTxIndex,
   HyperBeamRootTxIndex,
   CachedHyperBeamOffsets,
+  VerifiedDataItemRootIndex,
 } from './discovery/index.js';
 import { LRUCache } from 'lru-cache';
 import { makeContiguousMetadataStore } from './init/metadata-store.js';
@@ -1109,13 +1110,26 @@ for (const sourceName of config.ROOT_TX_LOOKUP_ORDER) {
 
     case 'graphql':
       if (Object.keys(config.GRAPHQL_ROOT_TX_GATEWAYS_URLS).length > 0) {
-        rootTxIndexes.push(
-          new GraphQLRootTxIndex({
-            log,
-            trustedGatewaysUrls: config.GRAPHQL_ROOT_TX_GATEWAYS_URLS,
-            cache: rootTxCache,
-          }),
-        );
+        if (config.REQUIRE_VERIFIED_DATA_ITEM_OFFSETS) {
+          for (const [url, gatewayConfig] of Object.entries(
+            config.GRAPHQL_ROOT_TX_GATEWAYS_URLS,
+          )) {
+            rootTxIndexes.push(
+              new GraphQLRootTxIndex({
+                log,
+                trustedGatewaysUrls: { [url]: gatewayConfig },
+              }),
+            );
+          }
+        } else {
+          rootTxIndexes.push(
+            new GraphQLRootTxIndex({
+              log,
+              trustedGatewaysUrls: config.GRAPHQL_ROOT_TX_GATEWAYS_URLS,
+              cache: rootTxCache,
+            }),
+          );
+        }
       } else {
         log.warn('GraphQL source configured but no GraphQL gateways defined');
       }
@@ -1174,10 +1188,22 @@ if (rootTxIndexes.length === 0) {
   );
 }
 
+// Verify every configured candidate against Arweave chunks before accepting it
+// when strict offset handling is enabled.
+const effectiveRootTxIndexes = config.REQUIRE_VERIFIED_DATA_ITEM_OFFSETS
+  ? [
+      new VerifiedDataItemRootIndex({
+        log,
+        candidates: rootTxIndexes,
+        offsetSource: ans104ChunksOffsetSource,
+      }),
+    ]
+  : rootTxIndexes;
+
 // Create composite root TX index with circuit breakers
 export const rootTxIndex = new CompositeRootTxIndex({
   log,
-  indexes: rootTxIndexes,
+  indexes: effectiveRootTxIndexes,
 });
 
 // Resolver for data item metadata (used by /tx/:id and tag headers)
@@ -1189,6 +1215,8 @@ export const dataItemMetaResolver = new TxMetadataResolver({
   rootTxIndex,
   ans104OffsetSources: [ans104GatewaysOffsetSource, ans104ChunksOffsetSource],
   dataItemIndexWriter: db,
+  dataAttributesSource: dataAttributesStore,
+  requireVerifiedDataItems: config.REQUIRE_VERIFIED_DATA_ITEM_OFFSETS,
   resolveConcurrency: config.TX_METADATA_RESOLVE_CONCURRENCY,
 });
 
@@ -1209,6 +1237,7 @@ const offsetAwareGatewaysDataSource = new RootParentDataSource({
   ans104OffsetSource: ans104GatewaysOffsetSource,
   fallbackToLegacyTraversal: config.ENABLE_DATA_ITEM_ROOT_TX_SEARCH,
   allowPassthroughWithoutOffsets: config.ENABLE_PASSTHROUGH_WITHOUT_OFFSETS,
+  requireVerifiedOffsets: config.REQUIRE_VERIFIED_DATA_ITEM_OFFSETS,
 });
 
 // Regular chunks data source (no data item resolution)
@@ -1223,6 +1252,7 @@ const txChunksOffsetAwareSource = new RootParentDataSource({
   ans104OffsetSource: ans104ChunksOffsetSource,
   fallbackToLegacyTraversal: config.ENABLE_DATA_ITEM_ROOT_TX_SEARCH,
   allowPassthroughWithoutOffsets: config.ENABLE_PASSTHROUGH_WITHOUT_OFFSETS,
+  requireVerifiedOffsets: config.REQUIRE_VERIFIED_DATA_ITEM_OFFSETS,
 });
 
 const s3DataSource =

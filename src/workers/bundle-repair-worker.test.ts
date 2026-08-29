@@ -63,12 +63,14 @@ class FakeAns104Unbundler {
     prioritized: boolean | undefined;
     bypassFilter: boolean;
   }> = [];
-  async queueItem(
+  acceptItems = true;
+  queueItem(
     item: UnbundleableItem,
     prioritized: boolean | undefined,
     bypassFilter = false,
-  ): Promise<void> {
+  ): boolean {
     this.queued.push({ id: item.id, prioritized, bypassFilter });
+    return this.acceptItems;
   }
 }
 
@@ -151,6 +153,28 @@ describe('BundleRepairWorker metrics', () => {
         kind: 'retry',
       }),
       before + 3,
+    );
+  });
+
+  it('does not record a retry rejected by the unbundler', async () => {
+    bundleIndex.failedBundleIds = ['bundle-a'];
+    ans104Unbundler.acceptItems = false;
+    const before = await getCounterValue(metrics.bundleRepairRetriesCounter, {
+      kind: 'retry',
+    });
+
+    await worker.retryBundles();
+
+    assert.deepEqual(
+      ans104Unbundler.queued.map((q) => q.id),
+      ['bundle-a'],
+    );
+    assert.deepEqual(bundleIndex.saveBundleRetriesCalls, []);
+    assert.equal(
+      await getCounterValue(metrics.bundleRepairRetriesCounter, {
+        kind: 'retry',
+      }),
+      before,
     );
   });
 

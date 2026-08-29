@@ -2793,4 +2793,65 @@ describe('RootParentDataSource', () => {
       assert.strictEqual((await readRebased('incomplete')) - before, 1);
     });
   });
+
+  it('ignores unverified stored offsets in strict mode', async () => {
+    const itemId = 'item';
+    const staleRootId = 'stale-root';
+    const verifiedRootId = 'verified-root';
+    let rootLookupCount = 0;
+    let fetchedId: string | undefined;
+    let fetchedOffset: number | undefined;
+
+    const strictAttributesStore: ContiguousDataAttributesStore = {
+      async getDataAttributes() {
+        return {
+          rootTransactionId: staleRootId,
+          rootDataItemOffset: 10,
+          rootDataOffset: 20,
+          size: 30,
+          verified: false,
+        };
+      },
+      async setDataAttributes() {},
+    };
+    const strictRootIndex: DataItemRootIndex = {
+      async getRootTx() {
+        rootLookupCount++;
+        return {
+          rootTxId: verifiedRootId,
+          rootOffset: 100,
+          rootDataOffset: 200,
+          size: 300,
+          dataSize: 30,
+        };
+      },
+    };
+    const strictDataSource: ContiguousDataSource = {
+      async getData(args) {
+        fetchedId = args.id;
+        fetchedOffset = args.region?.offset;
+        return {
+          stream: Readable.from([Buffer.alloc(30)]),
+          size: 30,
+          verified: true,
+          trusted: true,
+          cached: false,
+        };
+      },
+    };
+    const strictRootParentDataSource = new RootParentDataSource({
+      log,
+      dataSource: strictDataSource,
+      dataAttributesStore: strictAttributesStore,
+      dataItemRootTxIndex: strictRootIndex,
+      ans104OffsetSource,
+      requireVerifiedOffsets: true,
+    });
+
+    await strictRootParentDataSource.getData({ id: itemId });
+
+    assert.strictEqual(rootLookupCount, 1);
+    assert.strictEqual(fetchedId, verifiedRootId);
+    assert.strictEqual(fetchedOffset, 200);
+  });
 });

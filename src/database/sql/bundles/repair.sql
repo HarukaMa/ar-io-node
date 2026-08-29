@@ -33,10 +33,8 @@ FROM (
     -- A never-completing bundle keeps matched_data_item_count NULL and so can
     -- never be stamped fully-indexed; without this it is re-walked forever.
     AND COALESCE(b.retry_attempt_count, 0) < @max_retry_attempts
-    -- Cooldown: skip bundles retried within @retry_cutoff. Keyed on
-    -- last_retried_at (always advanced by updateBundleRetry) rather than
-    -- last_queued_at, so it holds even when the unbundler is saturated and
-    -- last_queued_at never advances.
+    -- Cooldown admitted retries. Queue rejections do not update
+    -- last_retried_at, so they remain eligible next cycle.
     AND (
       b.last_retried_at IS NULL
       OR b.last_retried_at < @retry_cutoff

@@ -33,6 +33,7 @@ export class RootParentDataSource implements ContiguousDataSource {
   private ans104OffsetSource: Ans104OffsetSource;
   private fallbackToLegacyTraversal: boolean;
   private allowPassthroughWithoutOffsets: boolean;
+  private requireVerifiedOffsets: boolean;
 
   /**
    * Creates a new RootParentDataSource instance.
@@ -43,6 +44,7 @@ export class RootParentDataSource implements ContiguousDataSource {
    * @param ans104OffsetSource - Source for finding data item offsets within ANS-104 bundles (fallback)
    * @param fallbackToLegacyTraversal - Whether to search for data item root transaction when attributes are incomplete
    * @param allowPassthroughWithoutOffsets - Whether to allow data retrieval without offset information
+   * @param requireVerifiedOffsets - Whether only verified data-item coordinates may be used
    */
   constructor({
     log,
@@ -52,6 +54,7 @@ export class RootParentDataSource implements ContiguousDataSource {
     ans104OffsetSource,
     fallbackToLegacyTraversal = true,
     allowPassthroughWithoutOffsets = true,
+    requireVerifiedOffsets = false,
   }: {
     log: winston.Logger;
     dataSource: ContiguousDataSource;
@@ -60,6 +63,7 @@ export class RootParentDataSource implements ContiguousDataSource {
     ans104OffsetSource: Ans104OffsetSource;
     fallbackToLegacyTraversal?: boolean;
     allowPassthroughWithoutOffsets?: boolean;
+    requireVerifiedOffsets?: boolean;
   }) {
     this.log = log.child({ class: this.constructor.name });
     this.dataSource = dataSource;
@@ -68,6 +72,7 @@ export class RootParentDataSource implements ContiguousDataSource {
     this.ans104OffsetSource = ans104OffsetSource;
     this.fallbackToLegacyTraversal = fallbackToLegacyTraversal;
     this.allowPassthroughWithoutOffsets = allowPassthroughWithoutOffsets;
+    this.requireVerifiedOffsets = requireVerifiedOffsets;
   }
 
   /**
@@ -406,6 +411,11 @@ export class RootParentDataSource implements ContiguousDataSource {
       return null;
     }
 
+    if (this.requireVerifiedOffsets && initialAttributes.verified !== true) {
+      log.debug('Ignoring unverified data item offsets');
+      return null;
+    }
+
     // If we already have absolute root offsets, use them directly without traversing
     if (
       initialAttributes.rootTransactionId !== undefined &&
@@ -467,11 +477,14 @@ export class RootParentDataSource implements ContiguousDataSource {
       const attributes = currentAttributes;
 
       if (attributes === null || attributes === undefined) {
+        if (this.requireVerifiedOffsets) {
+          log.debug('Verified parent chain is incomplete');
+          return null;
+        }
+
         // We hold no attributes for this ancestor. That may mean it is the L1
-        // root, or only that we have not indexed it yet — the two are
-        // indistinguishable from here. Serve the request with this root, but
-        // mark it provisional so it is not written back; persisting the guess
-        // is what leaves items permanently rooted at an intermediate bundle.
+        // root, or only that we have not indexed it yet. Serve the request with
+        // this root, but do not write the provisional result back.
         log.debug('Reached presumed root transaction (no attributes)', {
           rootTxId: currentId,
           totalOffset,
@@ -486,6 +499,13 @@ export class RootParentDataSource implements ContiguousDataSource {
           fromPreComputed: false,
           provisional: true,
         };
+      }
+
+      if (this.requireVerifiedOffsets && attributes.verified !== true) {
+        log.debug('Verified parent chain contains unverified offsets', {
+          currentId,
+        });
+        return null;
       }
 
       // Remember the original item (the item we're looking for)

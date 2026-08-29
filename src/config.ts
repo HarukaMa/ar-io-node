@@ -800,6 +800,9 @@ export const ROOT_TX_LOOKUP_ORDER = env
   .map((s) => s.trim())
   .filter((s) => s.length > 0);
 
+export const REQUIRE_VERIFIED_DATA_ITEM_OFFSETS =
+  env.varOrDefault('REQUIRE_VERIFIED_DATA_ITEM_OFFSETS', 'false') === 'true';
+
 // CDB64 root TX index configuration
 export const CDB64_ROOT_TX_INDEX_WATCH =
   env.varOrDefault('CDB64_ROOT_TX_INDEX_WATCH', 'true') === 'true';
@@ -1995,12 +1998,9 @@ export const BUNDLE_REPAIR_MAX_RETRY_ATTEMPTS = env.positiveIntOrDefault(
   50,
 );
 
-// Minimum seconds between retries of the same bundle. The pre-existing
-// reprocess cooldown keys on last_queued_at, which only advances when the
-// unbundler actually processes the item — so under queue backpressure it
-// never advances and the same bundles are re-selected every cycle. This
-// cooldown keys on last_retried_at (always bumped by updateBundleRetry), so
-// it holds even when the unbundler is saturated.
+// Minimum seconds between admitted retries of the same bundle.
+// Rejected retries leave last_retried_at unchanged so queue backpressure
+// does not consume retry attempts.
 export const BUNDLE_REPAIR_RETRY_COOLDOWN_SECONDS = env.nonNegativeIntOrDefault(
   'BUNDLE_REPAIR_RETRY_COOLDOWN_SECONDS',
   900, // 15 minutes

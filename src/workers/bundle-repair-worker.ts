@@ -151,7 +151,6 @@ export class BundleRepairWorker {
         );
         for (const bundleId of bundleIds) {
           this.log.info('Retrying failed bundle', { bundleId });
-          await this.bundleIndex.saveBundleRetries(bundleId);
 
           // Queue directly to the unbundler rather than routing through
           // TransactionFetcher → TransactionImporter → TX_INDEXED event →
@@ -159,13 +158,10 @@ export class BundleRepairWorker {
           // retries when the unbundler queue is full at the moment the
           // event fires, and subsequent TxFetcher re-queues for the same
           // already-imported L1 are no-ops, leaving the bundle stuck. A
-          // direct queueItem call ensures every retry cycle attempts an
-          // unbundle. With bypassFilter=true the filter doesn't re-run;
-          // we're explicitly retrying a bundle that was previously
-          // accepted, so the filter has nothing new to say. Queue-full
-          // backpressure still applies (see bundlesUnbundleSkippedCounter)
-          // — the call returns without parsing if the unbundler is
-          // saturated, letting the next cycle try again.
+          // direct queueItem call reports whether backpressure admitted the
+          // retry. Rejected retries remain eligible for the next cycle.
+          // Accepted retries bypass the filter because the bundle was
+          // previously accepted.
           //
           // Note: `bundleId` here is the bundle row's
           // `root_transaction_id` (per the alias in `selectFailedBundleIds`).
@@ -173,12 +169,15 @@ export class BundleRepairWorker {
           // parent and re-emits all children with correct offsets,
           // which causes any nested BDI in the failed pool to re-enter
           // the unbundle pipeline naturally.
-          await this.ans104Unbundler.queueItem(
+          const queued = this.ans104Unbundler.queueItem(
             buildRootBundleItem(bundleId),
             false /* prioritized */,
             true /* bypassFilter */,
           );
-          metrics.bundleRepairRetriesCounter.inc({ kind: 'retry' });
+          if (queued) {
+            await this.bundleIndex.saveBundleRetries(bundleId);
+            metrics.bundleRepairRetriesCounter.inc({ kind: 'retry' });
+          }
         }
       });
     } catch (error: any) {

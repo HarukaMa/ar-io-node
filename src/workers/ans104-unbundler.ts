@@ -105,17 +105,17 @@ export class Ans104Unbundler {
     this.shouldUnbundle = shouldUnbundle;
   }
 
-  async queueItem(
+  queueItem(
     item: UnbundleableItem,
     prioritized: boolean | undefined,
     bypassFilter = false,
-  ): Promise<void> {
+  ): boolean {
     const log = this.log.child({ method: 'queueItem', id: item.id });
 
     if (this.workerCount === 0) {
       metrics.bundlesUnbundleSkippedCounter.inc({ reason: 'no_workers' });
       log.warn('Skipping data item queuing due to no workers.');
-      return;
+      return false;
     }
 
     if (!this.shouldUnbundle() && prioritized !== true) {
@@ -123,20 +123,23 @@ export class Ans104Unbundler {
         reason: 'high_queue_depth',
       });
       log.warn('Skipping data item queuing due to high queue depth.');
-      return;
+      return false;
     }
 
     if (prioritized === true) {
       log.debug('Queueing prioritized bundle...');
       this.queue.unshift({ item, bypassFilter });
       log.debug('Prioritized bundle queued.');
+      return true;
     } else if (this.queue.length() < this.maxQueueSize) {
       log.debug('Queueing bundle...');
       this.queue.push({ item, bypassFilter });
       log.debug('Bundle queued.');
+      return true;
     } else {
       metrics.bundlesUnbundleSkippedCounter.inc({ reason: 'queue_full' });
       log.debug('Skipping unbundle, queue is full.');
+      return false;
     }
   }
 

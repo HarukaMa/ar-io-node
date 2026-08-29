@@ -73,6 +73,13 @@ describe('Ans104Unbundler', () => {
       assert.equal(await getSkipValue('high_queue_depth'), before + 10);
     });
 
+    it('returns whether the item was queued', () => {
+      shouldUnbundleMock.mock.mockImplementation(() => false);
+      assert.equal(ans104Unbundler.queueItem(mockItem, false), false);
+      shouldUnbundleMock.mock.mockImplementation(() => true);
+      assert.equal(ans104Unbundler.queueItem(mockItem, false), true);
+    });
+
     it('should queue item when shouldUnbundle returns true', async () => {
       const before = await getSkipValue('queue_full');
       for (let i = 0; i < 10; i++) {

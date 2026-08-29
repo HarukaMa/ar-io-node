@@ -138,6 +138,34 @@ describe('TxMetadataResolver', () => {
       // GQL should only be called once — second call served from cache
       assert.equal(gqlQueryable.getGqlTransaction.mock.callCount(), 1);
     });
+
+    it('skips unverified local data items in strict mode', async () => {
+      gqlQueryable.getGqlTransaction = mock.fn(() =>
+        Promise.resolve({
+          ...MOCK_GQL_TX,
+          isDataItem: true,
+          parentId: ROOT_TX_ID,
+        }),
+      );
+      const dataAttributesSource = {
+        getDataAttributes: mock.fn(() =>
+          Promise.resolve({ verified: false, size: 100, offset: 0 }),
+        ),
+      };
+      const resolver = new TxMetadataResolver({
+        log,
+        gqlQueryable,
+        rootTxIndex,
+        ans104OffsetSources: [offsetSource],
+        dataAttributesSource,
+        requireVerifiedDataItems: true,
+      });
+
+      const result = await resolver.resolve(TEST_ID);
+
+      assert.equal(result?.signature, MOCK_DATA_ITEM_META.signature);
+      assert.equal(rootTxIndex.getRootTx.mock.callCount(), 1);
+    });
   });
 
   describe('resolve — semaphore only gates remote path', () => {

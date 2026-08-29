@@ -9,14 +9,17 @@ import { Readable, addAbortSignal } from 'node:stream';
 import winston from 'winston';
 import {
   byteArrayToLong,
+  deepHash,
   deserializeTags,
+  indexToType,
   MAX_TAG_BYTES,
   MIN_BINARY_SIZE,
+  serializeTags,
 } from '@dha-team/arbundles';
 
 import { ContiguousDataSource } from '../types.js';
 import { readBytes, getReader, getSignatureMeta } from '../lib/bundles.js';
-import { toB64Url } from '../lib/encoding.js';
+import { fromB64Url, toB64Url } from '../lib/encoding.js';
 import * as metrics from '../metrics.js';
 
 export interface DataItemMeta {
@@ -1320,6 +1323,88 @@ export class Ans104OffsetSource {
         itemOffset,
       });
       throw error;
+    }
+  }
+
+  async verifyDataItem({
+    dataItemId,
+    rootBundleId,
+    itemOffset,
+    itemSize,
+    signal,
+  }: {
+    dataItemId: string;
+    rootBundleId: string;
+    itemOffset: number;
+    itemSize: number;
+    signal?: AbortSignal;
+  }): Promise<
+    DataItemMeta & {
+      offset: number;
+      size: number;
+      dataOffset: number;
+      dataSize: number;
+    }
+  > {
+    const item = await this.extractDataItemMeta(
+      rootBundleId,
+      itemOffset,
+      itemSize,
+      signal,
+    );
+    if (item.id !== dataItemId) {
+      throw new Error('Data item ID does not match its signature');
+    }
+
+    const payloadData =
+      item.payloadSize > 0
+        ? await this.dataSource.getData({
+            id: rootBundleId,
+            region: {
+              offset: itemOffset + item.headerSize,
+              size: item.payloadSize,
+            },
+            signal,
+          })
+        : undefined;
+    const payloadStream = payloadData?.stream ?? Readable.from([]);
+    if (signal !== undefined) {
+      addAbortSignal(signal, payloadStream);
+    }
+
+    try {
+      const signatureData = await deepHash([
+        Buffer.from('dataitem'),
+        Buffer.from('1'),
+        Buffer.from(item.signatureType.toString()),
+        fromB64Url(item.owner),
+        fromB64Url(item.target),
+        fromB64Url(item.anchor),
+        serializeTags(item.tags),
+        payloadStream,
+      ]);
+      const signer = indexToType[item.signatureType];
+      if (signer === undefined) {
+        throw new Error(`Unsupported signature type ${item.signatureType}`);
+      }
+      const valid = await signer.verify(
+        fromB64Url(item.owner),
+        signatureData,
+        fromB64Url(item.signature),
+      );
+      if (!valid) {
+        throw new Error('Invalid data item signature');
+      }
+
+      return {
+        ...item,
+        offset: itemOffset,
+        size: itemSize,
+        dataOffset: itemOffset + item.headerSize,
+        dataSize: item.payloadSize,
+      };
+    } finally {
+      destroyStream(payloadStream);
     }
   }
 }
