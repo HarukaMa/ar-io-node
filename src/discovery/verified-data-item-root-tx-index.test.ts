@@ -12,7 +12,7 @@ import {
 import Arweave from 'arweave';
 import { strict as assert } from 'node:assert';
 import { Readable } from 'node:stream';
-import { describe, it, mock } from 'node:test';
+import { describe, it } from 'node:test';
 import winston from 'winston';
 
 import { Ans104OffsetSource } from '../data/ans104-offset-source.js';
@@ -112,53 +112,6 @@ describe('VerifiedDataItemRootIndex', async () => {
     });
 
     assert.equal(await index.getRootTx(dataItem.id), undefined);
-  });
-
-  it('uses a valid offset hint and rejects a false one', async () => {
-    const knownOffset = await offsetSource.getDataItemOffset(
-      dataItem.id,
-      goodRootId,
-    );
-    assert.ok(knownOffset);
-
-    const linearLookup = mock.method(
-      offsetSource,
-      'getDataItemOffset',
-      async () => {
-        throw new Error('Linear lookup should not run');
-      },
-    );
-    const index = new VerifiedDataItemRootIndex({
-      log,
-      candidates: [
-        {
-          async getRootTx() {
-            return {
-              rootTxId: goodRootId,
-              rootDataOffset: goodRoot.length + 1,
-            };
-          },
-        },
-        {
-          async getRootTx() {
-            return {
-              rootTxId: goodRootId,
-              rootDataOffset: knownOffset.dataOffset,
-            };
-          },
-        },
-      ],
-      offsetSource,
-    });
-
-    try {
-      const result = await index.getRootTx(dataItem.id);
-      assert.equal(result?.rootTxId, goodRootId);
-      assert.equal(result?.dataSize, Buffer.byteLength('verified payload'));
-      assert.equal(linearLookup.mock.callCount(), 0);
-    } finally {
-      linearLookup.mock.restore();
-    }
   });
 
   it('accepts a self-root from the trusted local index', async () => {

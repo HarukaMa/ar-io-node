@@ -103,15 +103,9 @@ export class VerifiedDataItemRootIndex implements DataItemRootIndex {
     }
 
     const offset =
-      candidate.rootDataOffset !== undefined
-        ? await this.offsetSource.getDataItemByOffset(
-            id,
-            rootTxId,
-            candidate.rootDataOffset,
-          )
-        : path !== undefined && path.length > 0
-          ? await this.offsetSource.getDataItemOffsetWithPath(id, path)
-          : await this.offsetSource.getDataItemOffset(id, rootTxId);
+      path !== undefined && path.length > 0
+        ? await this.offsetSource.getDataItemOffsetWithPath(id, path)
+        : await this.offsetSource.getDataItemOffset(id, rootTxId);
     if (offset === null) {
       throw new Error('Data item was not found in the candidate root');
     }
