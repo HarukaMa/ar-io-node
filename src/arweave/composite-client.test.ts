@@ -454,6 +454,37 @@ describe('ArweaveCompositeClient', () => {
       }
     });
 
+    it('waits longer than 500ms for a peer chunk response', async () => {
+      // Axios socket timeouts require the platform clock; fake timers do not drive them.
+      const server = http.createServer((_req, res) => {
+        setTimeout(() => res.writeHead(500).end(), 750);
+      });
+      await new Promise<void>((resolve) =>
+        server.listen(0, '127.0.0.1', () => resolve()),
+      );
+      const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      mockPeerManager.selectBucketPeersForOffset = mock.fn(() => [url]);
+      mockPeerManager.selectPeers = mock.fn(() => [url]);
+
+      try {
+        const started = Date.now();
+        const client = createTestClient();
+        await assert.rejects(
+          client.peerGetChunk({
+            txSize: 1,
+            absoluteOffset: 1,
+            dataRoot: '',
+            relativeOffset: 0,
+            peerSelectionCount: 1,
+            retryCount: 1,
+          }),
+        );
+        assert.ok(Date.now() - started >= 650);
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
+
     it('should not use trusted node for chunk retrieval', async () => {
       const preferredChunkGetUrls = ['http://peer1.example.com'];
 
