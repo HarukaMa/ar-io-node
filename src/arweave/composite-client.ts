@@ -102,7 +102,7 @@ const TX_PROMISE_CACHE_TTL_MS = 60 * 1000;
 const DEFAULT_CHUNK_POST_ABORT_TIMEOUT_MS = 2000;
 const DEFAULT_CHUNK_POST_RESPONSE_TIMEOUT_MS = 5000;
 const DEFAULT_PEER_TX_TIMEOUT_MS = 5000;
-const PEER_CHUNK_REQUEST_TIMEOUT_MS = 2000;
+const PEER_CHUNK_REQUEST_TIMEOUT_MS = 500;
 
 /**
  * Race a shared promise against an AbortSignal so a single caller can bail
