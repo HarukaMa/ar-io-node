@@ -4,11 +4,11 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-import NodeCache from 'node-cache';
+import { LRUCache } from 'lru-cache';
 import { KVBufferStore } from '../types.js';
 
 export class NodeKvStore implements KVBufferStore {
-  private cache: NodeCache;
+  private cache: LRUCache<string, Buffer>;
 
   constructor({
     ttlSeconds,
@@ -17,12 +17,9 @@ export class NodeKvStore implements KVBufferStore {
     ttlSeconds: number;
     maxKeys: number;
   }) {
-    this.cache = new NodeCache({
-      stdTTL: ttlSeconds,
-      maxKeys,
-      deleteOnExpire: true,
-      useClones: false, // cloning promises is unsafe
-      checkperiod: Math.min(60 * 5, ttlSeconds),
+    this.cache = new LRUCache({
+      max: maxKeys,
+      ttl: ttlSeconds * 1000,
     });
   }
 
@@ -39,7 +36,7 @@ export class NodeKvStore implements KVBufferStore {
   }
 
   async del(key: string): Promise<void> {
-    this.cache.del(key);
+    this.cache.delete(key);
   }
 
   async has(key: string): Promise<boolean> {
@@ -47,6 +44,6 @@ export class NodeKvStore implements KVBufferStore {
   }
 
   async close(): Promise<void> {
-    this.cache.close();
+    this.cache.clear();
   }
 }

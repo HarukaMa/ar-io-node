@@ -773,12 +773,18 @@ describe('ReadThroughDataCache', function () {
     it('should skip cache writes when skipCache is enabled', async () => {
       let createWriteStreamCalls = 0;
       let queueDataContentAttributesCalls = 0;
+      let metadataGetCalls = 0;
+      const metadataStore = makeContiguousMetadataStore({ log, type: 'node' });
+      mock.method(metadataStore, 'get', () => {
+        metadataGetCalls++;
+        return Promise.resolve(undefined);
+      });
 
       const skipCacheInstance = new ReadThroughDataCache({
         log,
         dataSource: mockContiguousDataSource,
         dataStore: mockContiguousDataStore,
-        metadataStore: makeContiguousMetadataStore({ log, type: 'node' }),
+        metadataStore,
         contiguousDataIndex: mockContiguousDataIndex,
         dataAttributesStore: mockDataAttributesStore,
         dataContentAttributeImporter: mockDataContentAttributeImporter,
@@ -850,6 +856,11 @@ describe('ReadThroughDataCache', function () {
         queueDataContentAttributesCalls,
         0,
         'queueDataContentAttributes should not be called when skipCache is true',
+      );
+      assert.equal(
+        metadataGetCalls,
+        0,
+        'metadata cache should not be updated when skipCache is true',
       );
 
       // Verify data is still returned correctly

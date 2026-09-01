@@ -72,6 +72,19 @@ describe('KvJsonStore', () => {
       assert.equal(result, undefined);
     });
 
+    it('should evict the least recently used value at maxKeys', async () => {
+      const store = new NodeKvStore({ ttlSeconds: 100, maxKeys: 2 });
+
+      await store.set('first', Buffer.from('first'));
+      await store.set('second', Buffer.from('second'));
+      await store.get('first');
+      await store.set('third', Buffer.from('third'));
+
+      assert.equal(await store.get('second'), undefined);
+      assert.deepEqual(await store.get('first'), Buffer.from('first'));
+      assert.deepEqual(await store.get('third'), Buffer.from('third'));
+    });
+
     it('should return undefined for non-existent key', async () => {
       const result = await kvJsonStore.get('nonexistent');
       assert.equal(result, undefined);
