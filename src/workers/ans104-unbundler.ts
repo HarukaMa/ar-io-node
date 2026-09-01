@@ -168,6 +168,7 @@ export class Ans104Unbundler {
       if (bypassFilter || (await this.filter.match(item))) {
         log.info('Unbundling bundle...');
         let rootParentOffset = 0;
+        let parentSize: number | undefined;
 
         if (
           isNormalizedBundleDataItem(item) &&
@@ -176,6 +177,7 @@ export class Ans104Unbundler {
           item.data_offset !== null
         ) {
           rootParentOffset = item.root_parent_offset + item.data_offset;
+          parentSize = item.data_size;
         }
 
         await this.ans104Parser.parseBundle({
@@ -183,6 +185,7 @@ export class Ans104Unbundler {
           parentId: item.id,
           parentIndex: item.index,
           rootParentOffset,
+          ...(parentSize === undefined ? {} : { parentSize }),
         });
         log.info('Bundle unbundled.');
       }

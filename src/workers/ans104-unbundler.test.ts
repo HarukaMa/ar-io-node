@@ -7,6 +7,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, it, beforeEach, mock, afterEach } from 'node:test';
 import { Ans104Unbundler, UnbundleableItem } from './ans104-unbundler.js';
+import { NormalizedBundleDataItem } from '../types.js';
 import { EventEmitter } from 'node:events';
 import { createTestLogger } from '../../test/test-logger.js';
 import * as metrics from '../metrics.js';
@@ -140,6 +141,59 @@ describe('Ans104Unbundler', () => {
           rootTxId: 'root_tx_id',
         },
       );
+    });
+
+    it('passes the verified nested root range to the parser', async () => {
+      const nestedItem = {
+        anchor: '',
+        data_hash: null,
+        data_offset: 250,
+        data_size: 400,
+        id: 'nested-id',
+        index: 1,
+        offset: 200,
+        owner: '',
+        owner_address: '',
+        owner_offset: 2,
+        owner_size: 32,
+        parent_id: 'parent-id',
+        parent_index: 0,
+        root_parent_offset: 1000,
+        root_tx_id: 'root-id',
+        signature: null,
+        signature_offset: 2,
+        signature_size: 64,
+        signature_type: 1,
+        size: 450,
+        tags: [],
+        target: '',
+      } satisfies NormalizedBundleDataItem;
+      let parseArgs:
+        | {
+            rootTxId: string;
+            parentId: string;
+            parentIndex: number;
+            rootParentOffset: number;
+            parentSize?: number;
+          }
+        | undefined;
+      mockAns104Parser.parseBundle = (args: NonNullable<typeof parseArgs>) => {
+        parseArgs = args;
+        return Promise.resolve();
+      };
+
+      await ans104Unbundler.unbundle({
+        item: nestedItem,
+        bypassFilter: true,
+      });
+
+      assert.deepEqual(parseArgs, {
+        rootTxId: 'root-id',
+        parentId: 'nested-id',
+        parentIndex: 1,
+        rootParentOffset: 1250,
+        parentSize: 400,
+      });
     });
   });
 });

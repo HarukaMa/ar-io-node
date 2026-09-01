@@ -381,11 +381,13 @@ export class Ans104Parser {
     parentId,
     parentIndex,
     rootParentOffset,
+    parentSize,
   }: {
     rootTxId: string;
     parentId: string;
     parentIndex: number;
     rootParentOffset: number;
+    parentSize?: number;
   }): Promise<void> {
     // eslint-disable-next-line no-async-promise-executor
     return new Promise(async (resolve, reject) => {
@@ -429,13 +431,22 @@ export class Ans104Parser {
         // zombies — the "slow but eventually resolves" cases (observed up
         // to 10 min) still win on the abort path.
         let getDataWallClockTimer: NodeJS.Timeout | undefined;
+        const getDataPromise =
+          parentSize !== undefined && rootTxId !== parentId
+            ? this.contiguousDataSource.getData({
+                id: rootTxId,
+                region: { offset: rootParentOffset, size: parentSize },
+                signal: getDataController.signal,
+                acceptContentType: isAcceptableBundleContentType,
+              })
+            : this.contiguousDataSource.getData({
+                id: parentId,
+                signal: getDataController.signal,
+                acceptContentType: isAcceptableBundleContentType,
+              });
         try {
           data = await Promise.race<ContiguousData>([
-            this.contiguousDataSource.getData({
-              id: parentId,
-              signal: getDataController.signal,
-              acceptContentType: isAcceptableBundleContentType,
-            }),
+            getDataPromise,
             new Promise<never>((_, raceReject) => {
               if (this.getDataWallClockTimeoutMs <= 0) return;
               getDataWallClockTimer = setTimeout(() => {
