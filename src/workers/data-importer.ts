@@ -12,6 +12,7 @@ import { Ans104Unbundler } from './ans104-unbundler.js';
 import {
   ContiguousData,
   ContiguousDataSource,
+  NormalizedBundleDataItem,
   NormalizedDataItem,
   PartialJsonTransaction,
 } from '../types.js';
@@ -27,6 +28,18 @@ type AnyContiguousData = { id: string };
 type UnbundleableItem = (NormalizedDataItem | PartialJsonTransaction) &
   IndexProperty;
 type ImportableItem = AnyContiguousData | UnbundleableItem;
+
+const isNormalizedBundleDataItem = (
+  item: ImportableItem,
+): item is NormalizedBundleDataItem & IndexProperty =>
+  'root_tx_id' in item &&
+  typeof item.root_tx_id === 'string' &&
+  'root_parent_offset' in item &&
+  typeof item.root_parent_offset === 'number' &&
+  'data_offset' in item &&
+  typeof item.data_offset === 'number' &&
+  'data_size' in item &&
+  typeof item.data_size === 'number';
 
 interface DataImporterQueueItem {
   item: ImportableItem;
@@ -175,10 +188,22 @@ export class DataImporter {
       // Phase counters from #736: locate stuck workers when pipeline wedges.
       metrics.dataImporterPhaseCounter.inc({ phase: 'started' });
       try {
-        data = await this.contiguousDataSource.getData({
-          id: item.id,
-          signal: abortController.signal,
-        });
+        if (isNormalizedBundleDataItem(item)) {
+          // Parsed offsets are verified internal coordinates, so skip a root-bundle rescan.
+          data = await this.contiguousDataSource.getData({
+            id: item.root_tx_id,
+            region: {
+              offset: item.root_parent_offset + item.data_offset,
+              size: item.data_size,
+            },
+            signal: abortController.signal,
+          });
+        } else {
+          data = await this.contiguousDataSource.getData({
+            id: item.id,
+            signal: abortController.signal,
+          });
+        }
       } catch (error) {
         metrics.dataImporterPhaseCounter.inc({ phase: 'getData_errored' });
         throw error;

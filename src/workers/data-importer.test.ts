@@ -15,7 +15,10 @@ import {
   it,
   mock,
 } from 'node:test';
-import { ContiguousDataSource } from '../types.js';
+import {
+  ContiguousDataSource,
+  NormalizedBundleDataItem,
+} from '../types.js';
 import { DataImporter } from './data-importer.js';
 import { createTestLogger } from '../../test/test-logger.js';
 
@@ -151,6 +154,52 @@ describe('DataImporter', () => {
         (ans104Unbundler.queueItem as any).mock.calls[0].arguments,
         [mockItem, true, false],
       );
+    });
+
+    it('fetches a nested bundle from its verified root range', async () => {
+      const nestedItem = {
+        anchor: '',
+        data_hash: null,
+        data_offset: 250,
+        data_size: 400,
+        id: 'nested-id',
+        index: 1,
+        offset: 200,
+        owner: '',
+        owner_address: '',
+        owner_offset: 2,
+        owner_size: 32,
+        parent_id: 'parent-id',
+        parent_index: 0,
+        root_parent_offset: 1000,
+        root_tx_id: 'root-id',
+        signature: null,
+        signature_offset: 2,
+        signature_size: 64,
+        signature_type: 1,
+        size: 450,
+        tags: [],
+        target: '',
+      } satisfies NormalizedBundleDataItem;
+      let request:
+        | Parameters<ContiguousDataSource['getData']>[0]
+        | undefined;
+      const getData = contiguousDataSource.getData.bind(contiguousDataSource);
+      mock.method(contiguousDataSource, 'getData', (args) => {
+        request = args;
+        return getData(args);
+      });
+
+      await bundleDataImporter.download({
+        item: nestedItem,
+        prioritized: false,
+        bypassFilter: false,
+      });
+
+      assert.ok(request);
+      assert.equal(request.id, nestedItem.root_tx_id);
+      assert.deepEqual(request.region, { offset: 1250, size: 400 });
+      assert.ok(request.signal instanceof AbortSignal);
     });
 
     it('should handle download errors', async () => {
